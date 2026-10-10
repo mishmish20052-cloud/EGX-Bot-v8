@@ -1,1 +1,53 @@
+name: EGX Long-Term Bot (Investment)
 
+on:
+  # يوميًا الساعة 2:30 مساءً القاهرة (12:30 UTC) — بعد إغلاق السوق
+  schedule:
+    - cron: '30 12 * * 0-4'   # الأحد - الخميس
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run-long:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run long-term bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPO: ${{ github.repository }}
+          TOTAL_CAPITAL: ${{ secrets.TOTAL_CAPITAL }}
+          MEASUREMENT_MODE: ${{ secrets.MEASUREMENT_MODE || '1' }}
+        run: python bot.py long
+
+      - name: Save state files
+        run: |
+          git config user.name "EGX Bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -f \
+            long_positions.json \
+            short_positions.json \
+            daily_stats.json \
+            fundamentals_cache.json \
+            stocks_dna_memory.json \
+            sector_dna_memory.json \
+            2>/dev/null || true
+          git diff --cached --quiet || git commit -m "state update (long) [skip ci]"
+          git push || echo "No changes to push"
