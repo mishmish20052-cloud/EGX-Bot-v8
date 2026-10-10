@@ -47,7 +47,7 @@ MAX_LONG_POSITIONS = 5     # للاستثمار متوسط المدى
 MAX_SHORT_POSITIONS = 2    # للسوينج
 
 # حد أقصى لعدد الصفقات في نفس القطاع
-MAX_TRADES_PER_SECTOR_LONG = 1   # سهم واحد لكل قطاع في الطويل
+MAX_TRADES_PER_SECTOR_LONG = 2   # سهم واحد لكل قطاع في الطويل
 MAX_TRADES_PER_SECTOR_SHORT = 2  # سوينج
 
 # الحد الأدنى لقيمة المركز (بالجنيه)
