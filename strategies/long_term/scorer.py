@@ -3,6 +3,10 @@
 
 يستقبل قائمة الأسهم من screener، ويقيّمها بـ core.scoring
 (70% فني + 30% أساسيات)، ويرجع قائمة مرتبة بأفضل المرشحين.
+
+يتضمن أيضًا:
+- اختيار متنوع بين القطاعات (أقصى 2 لكل قطاع)
+- تقرير تنويع مفصل
 """
 
 import logging
@@ -12,6 +16,7 @@ from typing import Optional
 from core.scoring import score_stock, ScoreResult, get_weights_by_score
 from core.fundamentals import fetch_fundamentals_dict, compute_sector_strength
 from config.stocks import SHARIA_STOCKS, get_sector
+from config.settings import MAX_TRADES_PER_SECTOR_LONG
 from strategies.long_term.screener import ScreenedStock
 
 logger = logging.getLogger("egx_bot.long_term.scorer")
@@ -260,3 +265,142 @@ def summary_text(scored: list[ScoredCandidate]) -> str:
             f"قطاع: {c.sector}"
         )
     return "\n".join(lines)
+
+
+# ===========================================================
+# اختيار الأسهم مع تنويع القطاعات
+# ===========================================================
+def select_diversified(
+    scored: list[ScoredCandidate],
+    max_count: int = 5,
+    max_per_sector: int = None,
+) -> list[ScoredCandidate]:
+    """
+    يختار أفضل N سهم مع ضمان تنويع القطاعات.
+
+    القاعدة: أقصى max_per_sector سهم من نفس القطاع.
+
+    المعاملات:
+    - scored: قائمة الأسهم مرتبة تنازليًا حسب الدرجة
+    - max_count: أقصى عدد نهائي (افتراضي 5)
+    - max_per_sector: أقصى عدد من نفس القطاع
+      (افتراضي من الإعدادات: MAX_TRADES_PER_SECTOR_LONG)
+
+    ترجع: قائمة نهائية متنوعة.
+    """
+    if max_per_sector is None:
+        max_per_sector = MAX_TRADES_PER_SECTOR_LONG
+
+    selected: list[ScoredCandidate] = []
+    sector_counts: dict[str, int] = {}
+    skipped: list[str] = []
+
+    for candidate in scored:
+        if len(selected) >= max_count:
+            break
+
+        sector = candidate.sector
+        current = sector_counts.get(sector, 0)
+
+        # تجاوز لو القطاع وصل الحد
+        if current >= max_per_sector:
+            skipped.append(f"{candidate.symbol} ({sector})")
+            continue
+
+        selected.append(candidate)
+        sector_counts[sector] = current + 1
+
+    # تسجيل النتائج
+    logger.info(
+        f"🎯 التنويع: اخترنا {len(selected)} سهم من "
+        f"{len(sector_counts)} قطاعات"
+    )
+    for sector, count in sector_counts.items():
+        logger.debug(f"   • {sector}: {count} سهم")
+
+    if skipped:
+        logger.debug(f"⏭️ تم تخطي: {', '.join(skipped[:5])}")
+
+    return selected
+
+
+# ===========================================================
+# تقرير التنويع
+# ===========================================================
+def diversification_report(
+    selected: list[ScoredCandidate],
+) -> dict:
+    """
+    تقرير مفصل عن تنويع المحفظة.
+
+    ترجع:
+    {
+        "total_stocks": عدد الأسهم،
+        "num_sectors": عدد القطاعات،
+        "sectors": {اسم القطاع: {"count", "pct", "symbols"}},
+        "is_well_diversified": هل التنويع جيد؟
+    }
+    """
+    sectors: dict[str, list[str]] = {}
+    for c in selected:
+        sectors.setdefault(c.sector, []).append(c.symbol)
+
+    total = len(selected)
+    report = {
+        "total_stocks": total,
+        "num_sectors": len(sectors),
+        "sectors": {},
+        "is_well_diversified": len(sectors) >= min(3, total) if total > 0 else False,
+    }
+
+    for sector, symbols in sectors.items():
+        report["sectors"][sector] = {
+            "count": len(symbols),
+            "pct": round(len(symbols) / total * 100, 1) if total > 0 else 0,
+            "symbols": symbols,
+        }
+
+    return report
+
+
+# ===========================================================
+# الدالة الشاملة: من البيانات الخام إلى أفضل المرشحين
+# مع التنويع
+# ===========================================================
+def get_top_long_candidates_diversified(
+    stocks_data: dict,
+    min_score: float = 55.0,
+    max_count: int = 5,
+    max_per_sector: int = None,
+) -> tuple[list[ScoredCandidate], dict]:
+    """
+    دالة شاملة: تأخذ بيانات كل الأسهم وترجع أفضل N مع تنويع.
+
+    ترجع: (قائمة المرشحين، تقرير التنويع)
+    """
+    from strategies.long_term.screener import screen_batch
+
+    # 1. الفلترة الأولية
+    candidates = screen_batch(stocks_data)
+    if not candidates:
+        logger.info("لا يوجد مرشحون بعد الفلترة الأولية")
+        return ([], diversification_report([]))
+
+    # 2. التقييم المركّب
+    scored = score_candidates(candidates, min_score=min_score)
+
+    # 3. الاختيار مع التنويع
+    selected = select_diversified(
+        scored,
+        max_count=max_count,
+        max_per_sector=max_per_sector,
+    )
+
+    # 4. التقرير
+    report = diversification_report(selected)
+
+    logger.info(
+        f"✅ اخترنا {len(selected)} سهم من {report['num_sectors']} قطاعات"
+    )
+
+    return (selected, report)
