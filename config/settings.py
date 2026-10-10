@@ -47,7 +47,7 @@ MAX_LONG_POSITIONS = 5     # للاستثمار متوسط المدى
 MAX_SHORT_POSITIONS = 2    # للسوينج
 
 # حد أقصى لعدد الصفقات في نفس القطاع
-MAX_TRADES_PER_SECTOR_LONG = 2   # سهم واحد لكل قطاع في الطويل
+MAX_TRADES_PER_SECTOR_LONG = 2   # سهمان لكل قطاع في الطويل
 MAX_TRADES_PER_SECTOR_SHORT = 2  # سوينج
 
 # الحد الأدنى لقيمة المركز (بالجنيه)
@@ -66,6 +66,18 @@ COMMISSION_RATE = 0.0015   # 0.15% عمولة سمسرة
 SLIPPAGE_RATE = 0.001      # 0.10% انزلاق سعري
 TAX_RATE = 0.00125         # 0.125% ضريبة دمغة
 TOTAL_FEE_RATE = COMMISSION_RATE + SLIPPAGE_RATE + TAX_RATE  # ~0.375% لكل اتجاه
+
+# ===========================================================
+# نسب المخاطرة/المكافأة (R:R)
+# ===========================================================
+MIN_RR_TREND = 2.0         # نسبة R:R الدنيا لصفقات Trend
+MIN_RR_BREAKOUT = 1.5      # نسبة R:R الدنيا لصفقات Super Breakout
+
+# ===========================================================
+# إعدادات التريلينج ستوب
+# ===========================================================
+TRAILING_ATR_MULT = 1.2    # مضاعف ATR للـ trailing stop (بعد T2)
+TRAILING_ACTIVATION_PCT = 0.03  # تفعيل التريلينج عند +3% (اختياري)
 
 # ===========================================================
 # وضع التشغيل
@@ -139,7 +151,7 @@ DNA_ADAPT_DAMPING = 0.5           # تخفيف قوة التعديل
 ML_MODEL_PATH = "ml/artifacts/egx_model.joblib"
 ML_META_PATH = "ml/artifacts/model_meta.json"
 ML_CONFIDENCE_THRESHOLD = 0.60  # أدنى ثقة لاعتبار الإشارة صالحة
-ML_ENABLED = os.environ.get("ML_ENABLED", "1") == "1"
+ML_ENABLED = os.environ.get("ML_ENABLED", "0") == "1"  # معطّل افتراضيًا
 
 # ===========================================================
 # إعدادات القاطع اليومي (Circuit Breaker)
