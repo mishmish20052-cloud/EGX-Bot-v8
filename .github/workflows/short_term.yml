@@ -1,10 +1,11 @@
 name: EGX Short-Term Bot (Swing)
 
 on:
-  # كل 15 دقيقة خلال جلسة البورصة (10:00 - 14:30 القاهرة = 8:00 - 12:30 UTC)
+  # كل 15 دقيقة خلال جلسة البورصة
+  # القاهرة: 10:00 - 14:30 = UTC: 07:00 - 11:30 (UTC+3)
   schedule:
-    - cron: '0,15,30,45 8-11 * * 0-4'   # الأحد - الخميس (0=Sunday في GitHub)
-    - cron: '0,15,30 12 * * 0-4'        # حتى 12:30 UTC
+    - cron: '0,15,30,45 7-10 * * 0-4'   # 07:00-10:45 UTC = 10:00-13:45 القاهرة
+    - cron: '0,15,30 11 * * 0-4'        # 11:00-11:30 UTC = 14:00-14:30 القاهرة
   workflow_dispatch:
     inputs:
       force:
@@ -33,7 +34,6 @@ jobs:
           RUN=false
           if [ "$FORCE" = "1" ]; then RUN=true; fi
           if [ "$RUN" = "false" ]; then
-            # الأحد=7 (في بعض الأنظمة)، الاثنين=1 ... الخميس=4
             if [ "$D" -ge 1 ] && [ "$D" -le 4 ] || [ "$D" -eq 7 ]; then
               if [ "$H" -ge 10 ] && [ "$H" -lt 14 ]; then RUN=true; fi
               if [ "$H" -eq 14 ] && [ "$M" -le 30 ]; then RUN=true; fi
