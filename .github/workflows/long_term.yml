@@ -1,9 +1,9 @@
 name: EGX Long-Term Bot (Investment)
 
 on:
-  # يوميًا الساعة 2:30 مساءً القاهرة (12:30 UTC) — بعد إغلاق السوق
+  # يوميًا الساعة 2:30 مساءً القاهرة = 11:30 UTC (UTC+3)
   schedule:
-    - cron: '30 12 * * 0-4'   # الأحد - الخميس
+    - cron: '30 11 * * 0-4'
   workflow_dispatch:
 
 permissions:
