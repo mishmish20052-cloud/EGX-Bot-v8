@@ -54,19 +54,19 @@ def morning_report(
 
 
 # ===========================================================
-# 2. إشارة دخول
+# 2. إشارة دخول (مختصرة — للاستخدام السريع)
 # ===========================================================
 def entry_signal(
     symbol: str,
     name: str,
     sector: str,
-    signal_type: str,           # "Trend 📈" أو "Super Breakout 🚀"
+    signal_type: str,
     score: float,
-    plan: dict,                  # من make_plan
+    plan: dict,
     market_regime: str,
     measurement_mode: bool = False,
 ) -> str:
-    """رسالة إشارة شراء."""
+    """رسالة إشارة شراء مختصرة."""
     banner = measurement_banner(measurement_mode)
 
     return (
@@ -77,28 +77,191 @@ def entry_signal(
         f"🌍 السوق: `{market_regime}`\n"
         f"📌 `{symbol} - {name}` ({sector})\n"
         f"💵 دخول: `{plan.get('entry_price', 0):.2f}`\n"
-        f"📦 الكمية: `{plan.get('shares', 0)}` سهم "
-        f"(بقيمة `{plan.get('position_value', 0):,.0f}` ج.م)\n"
-        f"💰 نسبة من رأس المال: `{plan.get('weight', 0):.1f}%`\n\n"
-        f"💸 الخسارة عند الستوب `{plan.get('sl', 0):.2f}`: "
-        f"≈ `{plan.get('loss_egp', 0):,.0f}` ج.م\n"
-        f"🛡️ المخاطرة: `{plan.get('risk_pct', 0):.2f}%`\n"
-        f"✅ R:R = `1:{plan.get('rr_ratio', 0):.2f}`\n\n"
-        f"🎯 *الأهداف:*\n"
-        f"  T1 `{plan.get('t1', 0):.2f}`: +`{plan.get('p1', 0):,.0f}` ج.م\n"
-        f"  T2 `{plan.get('t2', 0):.2f}`: +`{plan.get('p2', 0):,.0f}` ج.م\n"
-        f"  T3 `{plan.get('t3', 0):.2f}`: +`{plan.get('p3', 0):,.0f}` ج.م"
+        f"📦 الكمية: `{plan.get('shares', 0)}` سهم\n"
+        f"💸 الخسارة عند الستوب: `{plan.get('loss_egp', 0):,.0f}` ج.م\n"
+        f"🎯 T1 `{plan.get('t1', 0):.2f}`: +`{plan.get('p1', 0):,.0f}` ج.م\n"
+        f"🚀 T2 `{plan.get('t2', 0):.2f}`: +`{plan.get('p2', 0):,.0f}` ج.م\n"
+        f"🔥 T3 `{plan.get('t3', 0):.2f}`: +`{plan.get('p3', 0):,.0f}` ج.م"
     )
 
 
 # ===========================================================
-# 3. الأهداف (T1 / T2 / T3)
+# 2-ب. إشارة دخول مفصلة (مع تفصيل التقييم)
+# ===========================================================
+def entry_signal_detailed(
+    symbol: str,
+    name: str,
+    sector: str,
+    signal_type: str,
+    score: float,
+    plan: dict,
+    market_regime: str,
+    score_details: dict,
+    measurement_mode: bool = False,
+) -> str:
+    """
+    رسالة إشارة شراء مع تفصيل كامل للتقييم.
+
+    score_details: dict من ScoreResult.to_dict()
+      يحتوي على breakdown بالتفصيل
+    """
+    banner = measurement_banner(measurement_mode)
+
+    # --- تفصيل التقييم الفني ---
+    tech_breakdown = score_details.get("breakdown", {})
+    technical_score = score_details.get("technical_score", 0)
+    fundamental_score = score_details.get("fundamental_score", 0)
+    grade = score_details.get("grade", "?")
+
+    # --- بناء قسم التفصيل ---
+    breakdown_lines = ["📊 *تفصيل التقييم*", "━━━━━━━━━━━━━━━━━"]
+
+    # الفني (70)
+    breakdown_lines.append(f"\n🎯 *الدرجة الفنية ({technical_score:.0f}/70):*")
+
+    if "tech_trend" in tech_breakdown:
+        v = tech_breakdown["tech_trend"]
+        emoji = "✅" if v >= 20 else "🟡" if v >= 10 else "❌"
+        breakdown_lines.append(f"  {emoji} الاتجاه: {v:.0f}/25")
+
+    if "tech_momentum" in tech_breakdown:
+        v = tech_breakdown["tech_momentum"]
+        emoji = "✅" if v >= 12 else "🟡" if v >= 6 else "❌"
+        breakdown_lines.append(f"  {emoji} الزخم: {v:.0f}/15")
+
+    if "tech_relative_strength" in tech_breakdown:
+        v = tech_breakdown["tech_relative_strength"]
+        emoji = "✅" if v >= 12 else "🟡" if v >= 6 else "❌"
+        breakdown_lines.append(f"  {emoji} القوة النسبية: {v:.0f}/15")
+
+    if "tech_sector_strength" in tech_breakdown:
+        v = tech_breakdown["tech_sector_strength"]
+        emoji = "✅" if v >= 7 else "🟡" if v >= 4 else "❌"
+        breakdown_lines.append(f"  {emoji} قوة القطاع: {v:.0f}/10")
+
+    if "tech_liquidity" in tech_breakdown:
+        v = tech_breakdown["tech_liquidity"]
+        emoji = "✅" if v >= 4 else "🟡" if v >= 2 else "❌"
+        breakdown_lines.append(f"  {emoji} السيولة: {v:.0f}/5")
+
+    # الأساسي (30)
+    breakdown_lines.append(f"\n💰 *الدرجة الأساسية ({fundamental_score:.0f}/30):*")
+
+    if "fund_valuation" in tech_breakdown:
+        v = tech_breakdown["fund_valuation"]
+        emoji = "✅" if v >= 8 else "🟡" if v >= 5 else "❌"
+        breakdown_lines.append(f"  {emoji} التقييم: {v:.0f}/10")
+
+    if "fund_earnings_growth" in tech_breakdown:
+        v = tech_breakdown["fund_earnings_growth"]
+        emoji = "✅" if v >= 8 else "🟡" if v >= 5 else "❌"
+        breakdown_lines.append(f"  {emoji} نمو الأرباح: {v:.0f}/10")
+
+    if "fund_profitability" in tech_breakdown:
+        v = tech_breakdown["fund_profitability"]
+        emoji = "✅" if v >= 8 else "🟡" if v >= 5 else "❌"
+        breakdown_lines.append(f"  {emoji} الربحية: {v:.0f}/10")
+
+    # --- الأسباب ---
+    reasons = score_details.get("reasons", [])
+    if reasons:
+        breakdown_lines.append("\n⚠️ *ملاحظات:*")
+        for r in reasons[:3]:
+            breakdown_lines.append(f"  • {r}")
+
+    # --- الأسعار والأهداف ---
+    price_lines = [
+        "",
+        "━━━━━━━━━━━━━━━━━",
+        "🎯 *خطة الصفقة*",
+        "━━━━━━━━━━━━━━━━━",
+        f"  💵 الدخول: `{plan.get('entry_price', 0):.2f}`",
+        f"  🛑 الستوب: `{plan.get('sl', 0):.2f}` "
+        f"(خسارة: `{plan.get('loss_egp', 0):,.0f}` ج.م)",
+        f"  📦 الكمية: `{plan.get('shares', 0)}` سهم",
+        f"  💰 القيمة: `{plan.get('shares', 0) * plan.get('entry_price', 0):,.0f}` ج.م",
+        f"  🎖️ الوزن: `{plan.get('weight', 0):.1f}%`",
+        f"  ⚖️ R:R: `1:{plan.get('rr_ratio', 0):.2f}`",
+        "",
+        "🎯 *الأهداف المتدرجة:*",
+        f"  T1 `{plan.get('t1', 0):.2f}`: +`{plan.get('p1', 0):,.0f}` ج.م",
+        f"  T2 `{plan.get('t2', 0):.2f}`: +`{plan.get('p2', 0):,.0f}` ج.م",
+        f"  T3 `{plan.get('t3', 0):.2f}`: +`{plan.get('p3', 0):,.0f}` ج.م",
+    ]
+
+    # --- دمج الكل ---
+    return (
+        banner +
+        f"🚀 *إشارة {signal_type}*\n"
+        f"📌 `{symbol} - {name}` ({sector})\n"
+        f"🌍 السوق: `{market_regime}`\n"
+        f"🎖️ *الجودة: {score:.0f}/100 ({grade})*\n\n"
+        + "\n".join(breakdown_lines)
+        + "\n".join(price_lines)
+    )
+
+
+# ===========================================================
+# 2-ج. تقرير الفلترة اليومي
+# ===========================================================
+def screening_report(
+    accepted: list,
+    rejected: list,
+    total_screened: int,
+    measurement_mode: bool = False,
+) -> str:
+    """
+    تقرير مفصل عن الفلترة والتقييم اليومي.
+
+    accepted: قائمة ScoredCandidate المقبولين
+    rejected: قائمة dict {"symbol", "reason", "score"}
+    total_screened: عدد الأسهم الكلي قبل الفلترة
+    """
+    banner = measurement_banner(measurement_mode)
+
+    lines = [
+        "📊 *تقرير الفلترة اليومي*",
+        f"📅 {datetime.now(CAIRO_TZ).strftime('%Y-%m-%d')}",
+        "━━━━━━━━━━━━━━━━━",
+        f"",
+        f"🔍 *إجمالي الأسهم:* `{total_screened}`",
+        f"✅ *مقبول:* `{len(accepted)}`",
+        f"❌ *مرفوض:* `{len(rejected)}`",
+        f"",
+    ]
+
+    # المقبولون
+    if accepted:
+        lines.append("━━━━━━━━━━━━━━━━━")
+        lines.append("✅ *الأسهم المقبولة:*")
+        lines.append("")
+        for c in accepted[:5]:
+            lines.append(
+                f"  • `{c.symbol}` ({c.grade}) — {c.total_score:.0f}/100"
+            )
+            lines.append(f"    قطاع: {c.sector}")
+
+    # المرفوضون
+    if rejected:
+        lines.append("")
+        lines.append("━━━━━━━━━━━━━━━━━")
+        lines.append("❌ *الأسهم المرفوضة (أول 5):*")
+        lines.append("")
+        for r in rejected[:5]:
+            lines.append(f"  • `{r['symbol']}`")
+            lines.append(f"    السبب: {r['reason']}")
+
+    return banner + "\n".join(lines)
+
+
+# ===========================================================
+# 3. الأهداف (T1 / T2 / T3 / T4)
 # ===========================================================
 def target_hit(
     symbol: str,
     name: str,
     price: float,
-    target_label: str,          # "T1" / "T2" / "T3"
+    target_label: str,
     sold_shares: int,
     remaining: int,
     net_profit: float,
@@ -108,8 +271,13 @@ def target_hit(
     """رسالة تحقق هدف."""
     banner = measurement_banner(measurement_mode)
 
-    emoji = {"T1": "🎯", "T2": "🚀", "T3": "🔥"}.get(target_label, "🎯")
-    portion_text = {"T1": "40%", "T2": "30%", "T3": "المتبقي"}.get(target_label, "")
+    emoji = {"T1": "🎯", "T2": "🚀", "T3": "🔥", "T4": "💎"}.get(target_label, "🎯")
+    portion_text = {
+        "T1": "25%",
+        "T2": "25%",
+        "T3": "25%",
+        "T4": "المتبقي",
+    }.get(target_label, "")
 
     stop_line = ""
     if new_stop is not None:
@@ -119,7 +287,7 @@ def target_hit(
         }.get(target_label, "")
         stop_line = f"\n🛑 *الستوب الجديد:* `{new_stop:.2f}` ({stop_label})"
 
-    complete_line = "\n✅ *صفقة مكتملة بنجاح*" if target_label == "T3" else ""
+    complete_line = "\n✅ *صفقة مكتملة بنجاح*" if target_label == "T4" else ""
 
     return (
         banner +
@@ -339,58 +507,49 @@ def error_message(
 
 
 # ===========================================================
-# اختبار سريع
+# 13. تفصيل التقييم (رسالة منفصلة عند الطلب)
 # ===========================================================
-if __name__ == "__main__":
-    print("=" * 60)
-    print("اختبار القوالب")
-    print("=" * 60)
+def score_breakdown(symbol: str, score_details: dict) -> str:
+    """
+    رسالة مستقلة بتفصيل التقييم الكامل لسهم.
+    """
+    grade = score_details.get("grade", "?")
+    total = score_details.get("total", 0)
+    tech = score_details.get("technical_score", 0)
+    fund = score_details.get("fundamental_score", 0)
+    breakdown = score_details.get("breakdown", {})
+    reasons = score_details.get("reasons", [])
 
-    # 1. تقرير الصباح
-    regime = {
-        "type": "BULL 🟢",
-        "risk": "LOW",
-        "change_pct": 1.25,
-        "max_trades": 4,
-        "source": "EGX30",
-        "breadth_pct": 35.0,
-    }
-    print("\n1️⃣ تقرير الصباح:")
-    print(morning_report(regime))
+    lines = [
+        f"📊 *تفصيل التقييم — {symbol}*",
+        "━━━━━━━━━━━━━━━━━",
+        f"🎖️ الدرجة الكلية: *{total:.0f}/100 ({grade})*",
+        f"",
+        f"🎯 الفني: {tech:.0f}/70",
+        f"💰 الأساسي: {fund:.0f}/30",
+        "",
+        "📋 *كل المكونات:*",
+    ]
 
-    # 2. إشارة دخول
-    plan = {
-        "entry_price": 25.50,
-        "shares": 100,
-        "position_value": 2550,
-        "weight": 25.5,
-        "sl": 24.50,
-        "loss_egp": 100,
-        "risk_pct": 1.0,
-        "rr_ratio": 2.5,
-        "t1": 27.00, "p1": 150,
-        "t2": 29.00, "p2": 350,
-        "t3": 32.00, "p3": 650,
-    }
-    print("\n2️⃣ إشارة دخول:")
-    print(entry_signal(
-        "TMGH", "طلعت مصطفى", "REALESTATE",
-        "Trend 📈", 78, plan, "BULL 🟢"
-    ))
+    for key, value in breakdown.items():
+        # تنسيق اسم المفتاح
+        clean_key = key.replace("tech_", "").replace("fund_", "")
+        clean_key_ar = {
+            "trend": "الاتجاه",
+            "momentum": "الزخم",
+            "relative_strength": "القوة النسبية",
+            "sector_strength": "قوة القطاع",
+            "liquidity": "السيولة",
+            "valuation": "التقييم",
+            "earnings_growth": "نمو الأرباح",
+            "profitability": "الربحية",
+        }.get(clean_key, clean_key)
+        lines.append(f"  • {clean_key_ar}: {value:.1f}")
 
-    # 3. تحقق هدف
-    print("\n3️⃣ T1 تحقق:")
-    print(target_hit(
-        "TMGH", "طلعت مصطفى", 27.00, "T1",
-        40, 60, 60.00, new_stop=25.50
-    ))
+    if reasons:
+        lines.append("")
+        lines.append("⚠️ *ملاحظات:*")
+        for r in reasons[:5]:
+            lines.append(f"  • {r}")
 
-    # 4. ستوب
-    print("\n4️⃣ ستوب:")
-    print(stop_hit(
-        "TMGH", "طلعت مصطفى", 24.50,
-        60, -60.00, is_win=False
-    ))
-
-    print("\n" + "=" * 60)
-    print("✅ اختبار القوالب اكتمل")
+    return "\n".join(lines)
