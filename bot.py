@@ -648,4 +648,24 @@ def _send_long_report(
         logger.error(f"فشل إرسال تقرير الاستثمار: {e}")
 
 
-# =
+# ===========================================================
+# الدالة الرئيسية
+# ===========================================================
+def main() -> None:
+    """نقطة الدخول الرئيسية."""
+    print_summary()
+
+    mode = sys.argv[1] if len(sys.argv) > 1 else "both"
+
+    try:
+        if mode in ("short", "both"):
+            run_short_bot()
+        if mode in ("long", "both"):
+            run_long_bot()
+    except Exception as e:
+        logger.exception(f"💥 خطأ غير متوقع: {e}")
+        tg.send_error(f"خطأ غير متوقع: {e}")
+
+
+if __name__ == "__main__":
+    main()
