@@ -64,7 +64,6 @@ def _fetch_interval(symbol: str, interval: str, retries: int = MAX_RETRIES) -> O
             if indicators and indicators.get("close", 0) > 0:
                 return indicators
 
-            # لو البيانات فاضية، اعتبرها فشل
             logger.debug(f"TradingView: بيانات فاضية لـ {symbol} @ {interval}")
 
         except Exception as e:
@@ -120,6 +119,12 @@ def fetch_stock(symbol: str, use_cache: bool = True) -> Optional[dict]:
     # السعر اليومي
     close_daily = _safe(i1d.get("close"), close) if i1d else close
     ema50_daily = _safe(i1d.get("EMA50"), close_daily) if i1d else close_daily
+    ema200_daily = _safe(i1d.get("EMA200"), 0) if i1d else 0
+
+    # حساب momentum 60d (تقديري من EMA200)
+    momentum_60d = 0.0
+    if ema200_daily > 0 and close_daily > 0:
+        momentum_60d = ((close_daily - ema200_daily) / ema200_daily) * 100
 
     # حساب RVOL
     volume = _safe(i15.get("volume"), 0)
@@ -155,6 +160,8 @@ def fetch_stock(symbol: str, use_cache: bool = True) -> Optional[dict]:
         # مؤشرات يومية
         "close_daily": close_daily,
         "ema50_daily": ema50_daily,
+        "ema200": ema200_daily,           # ← جديد
+        "momentum_60d": momentum_60d,     # ← جديد
         "atr": _safe(i1d.get("ATR"), close * 0.02) if i1d else close * 0.02,
         "adx": _safe(i1d.get("ADX"), 20) if i1d else 20,
         "stoch_daily": _safe(i1d.get("Stoch.K"), 50) if i1d else 50,
@@ -254,29 +261,3 @@ def clear_cache() -> None:
 def get_cache_size() -> int:
     """يرجع حجم الكاش الحالي."""
     return len(_CACHE)
-
-
-# ===========================================================
-# اختبار سريع
-# ===========================================================
-if __name__ == "__main__":
-    from config.stocks import ALL_SYMBOLS
-
-    print("=" * 60)
-    print("اختبار TradingView — أول 3 أسهم")
-    print("=" * 60)
-
-    for sym in ALL_SYMBOLS[:3]:
-        print(f"\n📊 جاري جلب {sym}...")
-        data = fetch_stock(sym)
-        if data:
-            print(f"   ✅ {sym}: سعر={data['close']:.2f}, "
-                  f"تغير={data['daily_change_pct']:+.2f}%, "
-                  f"RSI={data['rsi']:.0f}, "
-                  f"RVOL={data['rvol']:.2f}x")
-        else:
-            print(f"   ❌ فشل جلب {sym}")
-
-    print("\n" + "=" * 60)
-    print(f"حجم الكاش: {get_cache_size()} سهم")
-    print("✅ اختبار TradingView اكتمل")
