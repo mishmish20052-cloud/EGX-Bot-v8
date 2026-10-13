@@ -11,6 +11,7 @@ EGX-Bot-v8 — الملف الرئيسي.
     python bot.py          # تشغيل الاثنين
 """
 
+import json
 import logging
 import sys
 from datetime import datetime
@@ -31,6 +32,8 @@ from config.stocks import (
     ALL_SYMBOLS,
     MARKET_PROXY_BASKET,
     defensive_symbols,
+    get_name,
+    get_sector,
 )
 
 from core.market_regime import (
@@ -166,12 +169,71 @@ def run_long_bot() -> None:
 
     logger.info(f"✅ تم جلب {len(stocks_data)} سهم")
 
-    # 5. فلترة + تقييم + اختيار متنوع
-    logger.info("🔍 الفلترة والتقييم...")
-    selected, divers_report = long_scorer.get_top_long_candidates_diversified(
-        stocks_data,
-        min_score=55.0,
+    # 5. الفلترة الأولية
+    logger.info("🔍 الفلترة الأولية...")
+    from strategies.long_term.screener import screen_batch, screen_stock
+    screened = screen_batch(stocks_data)
+    logger.info(f"✅ {len(screened)} سهم اجتاز الفلترة الأولية")
+
+    # جمع المرفوضين في الفلترة الأولية
+    rejected_in_screening = []
+    for symbol, data in stocks_data.items():
+        passed, reason = screen_stock(symbol, data)
+        if not passed:
+            rejected_in_screening.append({
+                "symbol": symbol,
+                "reason": reason,
+                "stage": "screening",
+            })
+
+    # 6. التقييم المركب
+    logger.info("🎯 التقييم المركب...")
+    scored_all = long_scorer.score_candidates(screened, min_score=0.0)
+    
+    # المرفوضون في التقييم
+    rejected_in_scoring = []
+    accepted_for_ranking = []
+    
+    for candidate in scored_all:
+        if candidate.total_score >= 55.0:
+            accepted_for_ranking.append(candidate)
+        else:
+            rejected_in_scoring.append({
+                "symbol": candidate.symbol,
+                "reason": f"score {candidate.total_score:.1f} < 55",
+                "stage": "scoring",
+                "score": candidate.total_score,
+            })
+
+    # 7. الاختيار المتنوع
+    selected = long_scorer.select_diversified(
+        accepted_for_ranking,
         max_count=5,
+    )
+    divers_report = long_scorer.diversification_report(selected)
+
+    # المرفوضون بسبب التنويع
+    selected_syms = {c.symbol for c in selected}
+    rejected_in_diversification = []
+    for candidate in accepted_for_ranking:
+        if candidate.symbol not in selected_syms:
+            rejected_in_diversification.append({
+                "symbol": candidate.symbol,
+                "reason": f"القطاع {candidate.sector} وصل الحد الأقصى",
+                "stage": "diversification",
+                "score": candidate.total_score,
+            })
+
+    # --- حفظ تقرير الفلترة كامل ---
+    all_rejected = (
+        rejected_in_screening +
+        rejected_in_scoring +
+        rejected_in_diversification
+    )
+    _save_screening_report_json(
+        accepted=selected,
+        rejected=all_rejected,
+        total_screened=len(stocks_data),
     )
 
     if not selected:
@@ -180,20 +242,33 @@ def run_long_bot() -> None:
             tpl.measurement_banner(MEASUREMENT_MODE) +
             "📭 *لا يوجد مرشحون* للاستثمار متوسط المدى اليوم"
         )
+        # نرسل تقرير الفلترة بالتفصيل
+        _send_screening_report_tg(
+            selected=[], 
+            rejected=all_rejected[:10],
+            total=len(stocks_data),
+        )
         state.save_all()
         return
 
     logger.info(f"✅ {len(selected)} مرشح اجتازوا الفلترة")
 
-    # 6. إدارة المحفظة الحالية
+    # 8. إدارة المحفظة الحالية
     open_positions = state.get("long_positions", {})
 
     _track_long_positions(open_positions, stocks_data, state)
     open_positions = state.get("long_positions", {})
 
-    # 7. فحص إمكانية فتح صفقات جديدة
+    # 9. فحص إمكانية فتح صفقات جديدة
     accepted, decisions = long_portfolio.select_final_candidates(
         selected, open_positions
+    )
+
+    # 10. إرسال تقرير الفلترة على تليجرام
+    _send_screening_report_tg(
+        selected=selected,
+        rejected=all_rejected[:8],
+        total=len(stocks_data),
     )
 
     if not accepted:
@@ -204,16 +279,16 @@ def run_long_bot() -> None:
 
     logger.info(f"✅ {len(accepted)} صفقة جديدة ممكنة")
 
-    # 8. توزيع الأوزان
+    # 11. توزيع الأوزان
     allocations = long_portfolio.allocate_weights(accepted, open_positions)
 
-    # 9. فتح الصفقات الجديدة
+    # 12. فتح الصفقات الجديدة
     for candidate in accepted:
         if candidate.symbol not in allocations:
             continue
         _open_long_position(candidate, allocations[candidate.symbol], state)
 
-    # 10. تقرير
+    # 13. تقرير نهائي
     _send_long_report(selected, decisions, open_positions, divers_report, state)
 
     state.save_all()
@@ -224,10 +299,7 @@ def run_long_bot() -> None:
 # الدوال المساعدة (Helpers)
 # ===========================================================
 def _get_market_regime() -> MarketRegime:
-    """
-    يجلب حالة السوق من EGX30 أو سلة بديلة أو fallback نهائي.
-    """
-    # محاولة 1: EGX30 مباشرة
+    """يجلب حالة السوق من EGX30 أو سلة بديلة أو fallback نهائي."""
     index_data = dispatcher.fetch_market_index()
 
     if index_data and index_data.get("close", 0) > 0:
@@ -243,7 +315,6 @@ def _get_market_regime() -> MarketRegime:
         regime.source = index_data.get("source", "EGX30")
         return regime
 
-    # محاولة 2: سلة أسهم بديلة
     logger.warning("⚠️ EGX30 غير متاح — استخدام سلة بديلة")
     basket_data = dispatcher.fetch_market_basket(MARKET_PROXY_BASKET)
 
@@ -270,7 +341,6 @@ def _get_market_regime() -> MarketRegime:
         regime.source = f"basket({len(basket_data)})"
         return regime
 
-    # ✅ إصلاح: fallback نهائي — SIDEWAYS
     logger.warning("⚠️ فشل جلب بيانات السوق — fallback: SIDEWAYS")
     return MarketRegime(
         type="SIDEWAYS",
@@ -307,10 +377,9 @@ def _send_morning_report(regime: MarketRegime, state: StateManager) -> None:
 
 def _send_eod_report(state: StateManager) -> None:
     """يرسل تقرير نهاية اليوم — فقط بعد 2:30 م القاهرة."""
-    # ✅ إصلاح: تحقق من الوقت
     now = datetime.now(CAIRO_TZ)
     if now.hour < 14 or (now.hour == 14 and now.minute < 30):
-        return  # لسه مش وقت الإغلاق
+        return
 
     meta = state.get("daily_stats", {}).get("_meta", {})
     today = today_str()
@@ -326,6 +395,117 @@ def _send_eod_report(state: StateManager) -> None:
         set_meta(state, "eod_report", today)
     except Exception as e:
         logger.error(f"فشل تقرير الإغلاق: {e}")
+
+
+# ===========================================================
+# دوال حفظ وإرسال تقرير الفلترة
+# ===========================================================
+def _save_screening_report_json(
+    accepted: list,
+    rejected: list,
+    total_screened: int,
+) -> None:
+    """يحفظ تقرير الفلترة كامل في JSON."""
+    try:
+        today = today_str()
+        report = {
+            "date": today,
+            "timestamp": datetime.now(CAIRO_TZ).isoformat(),
+            "total_screened": total_screened,
+            "accepted_count": len(accepted),
+            "rejected_count": len(rejected),
+            "accepted": [
+                {
+                    "symbol": c.symbol,
+                    "name": c.name,
+                    "sector": c.sector,
+                    "total_score": c.total_score,
+                    "technical_score": c.technical_score,
+                    "fundamental_score": c.fundamental_score,
+                    "grade": c.grade,
+                    "sector_strength": c.sector_strength,
+                    "score_details": c.score_details,
+                }
+                for c in accepted
+            ],
+            "rejected": rejected,
+        }
+
+        # حفظ كـ JSON محلي + على GitHub
+        with open("screening_report.json", "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+
+        # حفظ نسخة باسم اليوم للرجوع
+        archive_name = f"screening_{today}.json"
+        with open(archive_name, "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=2)
+
+        logger.info(f"💾 تم حفظ تقرير الفلترة: {archive_name}")
+    except Exception as e:
+        logger.error(f"فشل حفظ تقرير الفلترة: {e}")
+
+
+def _send_screening_report_tg(
+    selected: list,
+    rejected: list,
+    total: int,
+) -> None:
+    """يرسل تقرير الفلترة على تليجرام."""
+    try:
+        # تحويل المرشحين لـ dict للقالب
+        accepted_data = [
+            {
+                "symbol": c.symbol,
+                "grade": c.grade,
+                "total_score": c.total_score,
+                "sector": c.sector,
+            }
+            for c in selected[:5]
+        ]
+
+        msg = tpl.screening_report(
+            accepted=type("C", (), {"__getitem__": lambda self, i: type("X", (), accepted_data[i])()}),
+            rejected=rejected[:8],
+            total_screened=total,
+            measurement_mode=MEASUREMENT_MODE,
+        )
+        # ملاحظة: نبني الكائن مبسط
+        tg.send(_build_screening_text(selected, rejected, total))
+    except Exception as e:
+        logger.error(f"فشل إرسال تقرير الفلترة: {e}")
+
+
+def _build_screening_text(selected: list, rejected: list, total: int) -> str:
+    """يبني نص تقرير الفلترة (مبسط)."""
+    banner = tpl.measurement_banner(MEASUREMENT_MODE)
+    lines = [
+        "📊 *تقرير الفلترة والتقييم*",
+        f"📅 {today_str()}",
+        "━━━━━━━━━━━━━━━━━",
+        "",
+        f"🔍 *إجمالي الأسهم:* `{total}`",
+        f"✅ *مقبول:* `{len(selected)}`",
+        f"❌ *مرفوض:* `{len(rejected)}`",
+        "",
+    ]
+
+    if selected:
+        lines.append("━━━━━━━━━━━━━━━━━")
+        lines.append("✅ *المرشحون النهائيون:*")
+        for c in selected[:5]:
+            lines.append(
+                f"  • `{c.symbol}` ({c.grade}) — {c.total_score:.0f}/100"
+            )
+        lines.append("")
+
+    if rejected:
+        lines.append("━━━━━━━━━━━━━━━━━")
+        lines.append("❌ *أبرز المرفوضين:*")
+        for r in rejected[:5]:
+            lines.append(f"  • `{r.get('symbol', '?')}`")
+            lines.append(f"    ↳ {r.get('reason', '؟')}")
+
+    return banner + "\n".join(lines)
 
 
 # ===========================================================
@@ -377,12 +557,11 @@ def _scan_for_short_entries(
     current = len(trades)
 
     if current >= max_trades:
-        logger.debug(f"وصلنا الحد الأقصى ({max_trades})")
         return
 
     can_risk, risk_pct = check_total_risk(trades, capital=SHORT_TERM_CAPITAL)
     if not can_risk:
-        logger.warning(f"⚠️ المخاطرة الكلية {risk_pct}% مرتفعة — لا صفقات جديدة")
+        logger.warning(f"⚠️ المخاطرة الكلية {risk_pct}% مرتفعة")
         return
 
     candidates = []
@@ -412,7 +591,6 @@ def _scan_for_short_entries(
         )
 
         if not plan.valid:
-            logger.debug(f"⏭️ {result.symbol}: {plan.reason}")
             continue
 
         sector = data.get("sector", "OTHER")
@@ -537,7 +715,7 @@ def _track_long_positions(
 
 
 def _open_long_position(candidate, allocation: dict, state: StateManager) -> None:
-    """يفتح صفقة استثمار طويلة جديدة."""
+    """يفتح صفقة استثمار طويلة جديدة مع تفصيل كامل."""
     entry = candidate.data.get("close", 0)
     atr = candidate.data.get("atr", entry * 0.025)
     capital_alloc = allocation.get("weight_egp", 0)
@@ -567,15 +745,36 @@ def _open_long_position(candidate, allocation: dict, state: StateManager) -> Non
 
     bump_stat(state, "signals")
 
+    # ✅ استخدام القالب المفصل
     try:
-        msg = (
-            tpl.measurement_banner(MEASUREMENT_MODE) +
-            f"📈 *شراء طويل المدى*\n"
-            f"📌 `{candidate.symbol} - {candidate.name}` ({candidate.sector})\n"
-            f"💵 دخول: `{entry:.2f}` × `{shares}` = `{entry*shares:,.0f}` ج.م\n"
-            f"🛑 الستوب: `{stop_loss:.2f}` (خسارة: `{shares*(entry-stop_loss):,.0f}` ج.م)\n"
-            f"🎯 T1 `{position['t1']}` | T2 `{position['t2']}` | T3 `{position['t3']}` | T4 `{position['t4']}`\n"
-            f"🎖️ الجودة: `{candidate.total_score:.0f}/100` ({candidate.grade})"
+        plan_dict = {
+            "entry_price": entry,
+            "shares": shares,
+            "sl": stop_loss,
+            "loss_egp": round(shares * (entry - stop_loss), 2),
+            "t1": position["t1"],
+            "t2": position["t2"],
+            "t3": position["t3"],
+            "t4": position["t4"],
+            "p1": round(shares * (position["t1"] - entry), 2),
+            "p2": round(shares * (position["t2"] - entry), 2),
+            "p3": round(shares * (position["t3"] - entry), 2),
+            "weight": round(capital_alloc / LONG_TERM_CAPITAL * 100, 2),
+            "rr_ratio": round(
+                (position["t1"] - entry) / (entry - stop_loss), 2
+            ) if (entry - stop_loss) > 0 else 0,
+        }
+
+        msg = tpl.entry_signal_detailed(
+            symbol=candidate.symbol,
+            name=candidate.name,
+            sector=candidate.sector,
+            signal_type="شراء طويل المدى",
+            score=candidate.total_score,
+            plan=plan_dict,
+            market_regime="Long-Term",
+            score_details=candidate.score_details,
+            measurement_mode=MEASUREMENT_MODE,
         )
         tg.send(msg)
     except Exception as e:
