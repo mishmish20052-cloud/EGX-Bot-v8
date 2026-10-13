@@ -156,6 +156,7 @@ def run_long_bot() -> None:
             f"⚠️ *لا شراء طويل المدى اليوم*\n"
             f"حالة السوق: `{regime.type}`"
         )
+        state.save_all()
         return
 
     # 4. جلب بيانات كل الأسهم
@@ -189,11 +190,11 @@ def run_long_bot() -> None:
     # 6. التقييم المركب
     logger.info("🎯 التقييم المركب...")
     scored_all = long_scorer.score_candidates(screened, min_score=0.0)
-    
+
     # المرفوضون في التقييم
     rejected_in_scoring = []
     accepted_for_ranking = []
-    
+
     for candidate in scored_all:
         if candidate.total_score >= 55.0:
             accepted_for_ranking.append(candidate)
@@ -242,12 +243,13 @@ def run_long_bot() -> None:
             tpl.measurement_banner(MEASUREMENT_MODE) +
             "📭 *لا يوجد مرشحون* للاستثمار متوسط المدى اليوم"
         )
-        # نرسل تقرير الفلترة بالتفصيل
         _send_screening_report_tg(
-            selected=[], 
+            selected=[],
             rejected=all_rejected[:10],
             total=len(stocks_data),
         )
+        # ✅ نرسل تقرير الإغلاق كذلك
+        _send_eod_report(state)
         state.save_all()
         return
 
@@ -274,6 +276,8 @@ def run_long_bot() -> None:
     if not accepted:
         logger.info("لا توجد صفقات جديدة ممكنة")
         _send_long_report(selected, decisions, open_positions, divers_report, state)
+        # ✅ إرسال تقرير الإغلاق
+        _send_eod_report(state)
         state.save_all()
         return
 
@@ -290,6 +294,9 @@ def run_long_bot() -> None:
 
     # 13. تقرير نهائي
     _send_long_report(selected, decisions, open_positions, divers_report, state)
+
+    # ✅ إرسال تقرير الإغلاق
+    _send_eod_report(state)
 
     state.save_all()
     logger.info("\n✅ انتهى بوت الاستثمار متوسط المدى بنجاح")
@@ -376,7 +383,12 @@ def _send_morning_report(regime: MarketRegime, state: StateManager) -> None:
 
 
 def _send_eod_report(state: StateManager) -> None:
-    """يرسل تقرير نهاية اليوم — فقط بعد 2:30 م القاهرة."""
+    """
+    يرسل تقرير نهاية اليوم — فقط بعد 2:30 م القاهرة.
+
+    ✅ إصلاح: يقرأ من long_positions + short_positions
+    ✅ إصلاح: يعرض قائمة المراكز المفتوحة
+    """
     now = datetime.now(CAIRO_TZ)
     if now.hour < 14 or (now.hour == 14 and now.minute < 30):
         return
@@ -387,10 +399,49 @@ def _send_eod_report(state: StateManager) -> None:
         return
 
     stats = state.get("daily_stats", {}).get(today, {})
-    trades = state.get("short_positions", {})
+
+    # ✅ نجمع الطويل + السوينج
+    short_trades = state.get("short_positions", {})
+    long_trades = state.get("long_positions", {})
+    total_open = len(short_trades) + len(long_trades)
 
     try:
-        msg = tpl.eod_report(stats, len(trades), measurement_mode=MEASUREMENT_MODE)
+        msg = tpl.eod_report(
+            stats,
+            total_open,
+            measurement_mode=MEASUREMENT_MODE,
+        )
+
+        # ✅ نضيف قائمة المراكز الطويلة المفتوحة
+        if long_trades:
+            msg += "\n\n📊 *المراكز الطويلة المفتوحة:*\n"
+            for symbol, pos in list(long_trades.items())[:5]:
+                name = pos.get("name", symbol)
+                entry = pos.get("entry_price", 0)
+                stop = pos.get("current_stop", pos.get("stop_loss", 0))
+                shares = pos.get("shares", 0)
+                remaining = pos.get("remaining", shares)
+                msg += (
+                    f"  • `{symbol}` — دخول `{entry:.2f}` | "
+                    f"ستوب `{stop:.2f}` | `{remaining}` سهم\n"
+                )
+
+        # ✅ نضيف قائمة صفقات السوينج المفتوحة
+        if short_trades:
+            msg += "\n⚡ *صفقات السوينج المفتوحة:*\n"
+            for symbol, pos in list(short_trades.items())[:5]:
+                entry = pos.get("entry_price", 0)
+                stop = pos.get("current_stop", pos.get("sl", 0))
+                shares = pos.get("shares", 0)
+                remaining = pos.get("remaining", shares)
+                msg += (
+                    f"  • `{symbol}` — دخول `{entry:.2f}` | "
+                    f"ستوب `{stop:.2f}` | `{remaining}` سهم\n"
+                )
+
+        if total_open == 0:
+            msg += "\n💼 لا توجد مراكز مفتوحة حالياً"
+
         tg.send(msg)
         set_meta(state, "eod_report", today)
     except Exception as e:
@@ -431,7 +482,7 @@ def _save_screening_report_json(
             "rejected": rejected,
         }
 
-        # حفظ كـ JSON محلي + على GitHub
+        # حفظ كـ JSON محلي
         with open("screening_report.json", "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
 
@@ -452,31 +503,14 @@ def _send_screening_report_tg(
 ) -> None:
     """يرسل تقرير الفلترة على تليجرام."""
     try:
-        # تحويل المرشحين لـ dict للقالب
-        accepted_data = [
-            {
-                "symbol": c.symbol,
-                "grade": c.grade,
-                "total_score": c.total_score,
-                "sector": c.sector,
-            }
-            for c in selected[:5]
-        ]
-
-        msg = tpl.screening_report(
-            accepted=type("C", (), {"__getitem__": lambda self, i: type("X", (), accepted_data[i])()}),
-            rejected=rejected[:8],
-            total_screened=total,
-            measurement_mode=MEASUREMENT_MODE,
-        )
-        # ملاحظة: نبني الكائن مبسط
-        tg.send(_build_screening_text(selected, rejected, total))
+        msg = _build_screening_text(selected, rejected, total)
+        tg.send(msg)
     except Exception as e:
         logger.error(f"فشل إرسال تقرير الفلترة: {e}")
 
 
 def _build_screening_text(selected: list, rejected: list, total: int) -> str:
-    """يبني نص تقرير الفلترة (مبسط)."""
+    """يبني نص تقرير الفلترة."""
     banner = tpl.measurement_banner(MEASUREMENT_MODE)
     lines = [
         "📊 *تقرير الفلترة والتقييم*",
@@ -745,7 +779,7 @@ def _open_long_position(candidate, allocation: dict, state: StateManager) -> Non
 
     bump_stat(state, "signals")
 
-    # ✅ استخدام القالب المفصل
+    # استخدام القالب المفصل
     try:
         plan_dict = {
             "entry_price": entry,
