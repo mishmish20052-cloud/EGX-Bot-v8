@@ -68,9 +68,7 @@ logger = logging.getLogger("egx_bot")
 # نقطة 1: تشغيل السوينج (Short-Term Bot)
 # ===========================================================
 def run_short_bot() -> None:
-    """
-    تشغيل بوت السوينج — دورة يومية بـ 4 نبضات.
-    """
+    """تشغيل بوت السوينج — دورة يومية بـ 4 نبضات."""
     logger.info("=" * 60)
     logger.info("⚡ تشغيل بوت السوينج")
     logger.info("=" * 60)
@@ -100,7 +98,6 @@ def run_short_bot() -> None:
     for cycle in range(SHORT_PULSE_CYCLES):
         logger.info(f"\n💓 نبضة {cycle + 1}/{SHORT_PULSE_CYCLES}")
 
-        # جلب البيانات
         symbols = _get_symbols_for_scan(regime)
         stocks_data = dispatcher.fetch_stocks(symbols)
 
@@ -108,22 +105,14 @@ def run_short_bot() -> None:
             logger.warning("لا توجد بيانات — تخطي النبضة")
             continue
 
-        # تحديث حالة السوق بناءً على breadth
         regime = apply_breadth_adjustment(regime, stocks_data)
-
-        # جلب الصفقات المفتوحة
         trades = state.get("short_positions", {})
 
-        # فحص الصفقات المفتوحة أولًا
         _track_short_positions(trades, stocks_data, regime, state)
-
-        # البحث عن صفقات جديدة
         _scan_for_short_entries(trades, stocks_data, regime, state)
 
-        # حفظ التغييرات
         state.save_all()
 
-        # نوم بين النبضات
         if cycle < SHORT_PULSE_CYCLES - 1:
             logger.info(f"😴 نوم {SHORT_PULSE_SLEEP} ثانية...")
             import time
@@ -139,9 +128,7 @@ def run_short_bot() -> None:
 # نقطة 2: تشغيل الاستثمار متوسط المدى (Long-Term Bot)
 # ===========================================================
 def run_long_bot() -> None:
-    """
-    تشغيل بوت الاستثمار متوسط المدى — تشغيل أسبوعي.
-    """
+    """تشغيل بوت الاستثمار متوسط المدى — تشغيل أسبوعي."""
     logger.info("=" * 60)
     logger.info("📈 تشغيل بوت الاستثمار متوسط المدى")
     logger.info("=" * 60)
@@ -201,10 +188,7 @@ def run_long_bot() -> None:
     # 6. إدارة المحفظة الحالية
     open_positions = state.get("long_positions", {})
 
-    # فحص الصفقات المفتوحة (T1/T2/T3/T4 + Stops)
     _track_long_positions(open_positions, stocks_data, state)
-
-    # إعادة تحميل بعد التحديث
     open_positions = state.get("long_positions", {})
 
     # 7. فحص إمكانية فتح صفقات جديدة
@@ -227,7 +211,6 @@ def run_long_bot() -> None:
     for candidate in accepted:
         if candidate.symbol not in allocations:
             continue
-
         _open_long_position(candidate, allocations[candidate.symbol], state)
 
     # 10. تقرير
@@ -242,13 +225,13 @@ def run_long_bot() -> None:
 # ===========================================================
 def _get_market_regime() -> MarketRegime:
     """
-    يجلب حالة السوق من EGX30 أو سلة بديلة.
+    يجلب حالة السوق من EGX30 أو سلة بديلة أو fallback نهائي.
     """
     # محاولة 1: EGX30 مباشرة
     index_data = dispatcher.fetch_market_index()
 
-    if index_data:
-        return classify_regime(
+    if index_data and index_data.get("close", 0) > 0:
+        regime = classify_regime(
             close=index_data.get("close", 0),
             open_price=index_data.get("open", 0),
             ema50=index_data.get("ema50", 0),
@@ -257,37 +240,47 @@ def _get_market_regime() -> MarketRegime:
             macd_val=index_data.get("macd", 0),
             macd_signal=index_data.get("macd_signal", 0),
         )
+        regime.source = index_data.get("source", "EGX30")
+        return regime
 
     # محاولة 2: سلة أسهم بديلة
     logger.warning("⚠️ EGX30 غير متاح — استخدام سلة بديلة")
     basket_data = dispatcher.fetch_market_basket(MARKET_PROXY_BASKET)
 
-    if len(basket_data) < 3:
-        logger.error("❌ فشل جلب بيانات السوق بالكامل")
-        return None
+    if len(basket_data) >= 3:
+        closes = [d["close"] for d in basket_data.values()]
+        opens = [d["open"] for d in basket_data.values()]
+        ema50s = [d.get("ema50_daily", d["close"]) for d in basket_data.values()]
+        rsis = [d.get("rsi", 50) for d in basket_data.values()]
 
-    # متوسط السلة
-    closes = [d["close"] for d in basket_data.values()]
-    opens = [d["open"] for d in basket_data.values()]
-    ema50s = [d.get("ema50_daily", d["close"]) for d in basket_data.values()]
-    rsis = [d.get("rsi", 50) for d in basket_data.values()]
+        avg_close = sum(closes) / len(closes)
+        avg_open = sum(opens) / len(opens)
+        avg_ema50 = sum(ema50s) / len(ema50s)
+        avg_rsi = sum(rsis) / len(rsis)
 
-    avg_close = sum(closes) / len(closes)
-    avg_open = sum(opens) / len(opens)
-    avg_ema50 = sum(ema50s) / len(ema50s)
-    avg_rsi = sum(rsis) / len(rsis)
+        regime = classify_regime(
+            close=avg_close,
+            open_price=avg_open,
+            ema50=avg_ema50,
+            ema200=0,
+            rsi_val=avg_rsi,
+            macd_val=0,
+            macd_signal=0,
+        )
+        regime.source = f"basket({len(basket_data)})"
+        return regime
 
-    regime = classify_regime(
-        close=avg_close,
-        open_price=avg_open,
-        ema50=avg_ema50,
-        ema200=0,
-        rsi_val=avg_rsi,
-        macd_val=0,
-        macd_signal=0,
+    # ✅ إصلاح: fallback نهائي — SIDEWAYS
+    logger.warning("⚠️ فشل جلب بيانات السوق — fallback: SIDEWAYS")
+    return MarketRegime(
+        type="SIDEWAYS",
+        risk="MEDIUM",
+        risk_multiplier=0.8,
+        max_trades=3,
+        source="fallback",
+        change_pct=0.0,
+        breadth_pct=None,
     )
-    regime.source = f"basket({len(basket_data)})"
-    return regime
 
 
 def _get_symbols_for_scan(regime: MarketRegime) -> list[str]:
@@ -302,7 +295,7 @@ def _send_morning_report(regime: MarketRegime, state: StateManager) -> None:
     meta = state.get("daily_stats", {}).get("_meta", {})
     today = today_str()
     if meta.get("morning_report") == today:
-        return  # أُرسل بالفعل اليوم
+        return
 
     try:
         msg = tpl.morning_report(regime.to_dict(), MEASUREMENT_MODE)
@@ -313,7 +306,12 @@ def _send_morning_report(regime: MarketRegime, state: StateManager) -> None:
 
 
 def _send_eod_report(state: StateManager) -> None:
-    """يرسل تقرير نهاية اليوم."""
+    """يرسل تقرير نهاية اليوم — فقط بعد 2:30 م القاهرة."""
+    # ✅ إصلاح: تحقق من الوقت
+    now = datetime.now(CAIRO_TZ)
+    if now.hour < 14 or (now.hour == 14 and now.minute < 30):
+        return  # لسه مش وقت الإغلاق
+
     meta = state.get("daily_stats", {}).get("_meta", {})
     today = today_str()
     if meta.get("eod_report") == today:
@@ -339,9 +337,7 @@ def _track_short_positions(
     regime: MarketRegime,
     state: StateManager,
 ) -> None:
-    """
-    متابعة الصفقات المفتوحة (T1/T2/T3 + Stops).
-    """
+    """متابعة الصفقات المفتوحة (T1/T2/T3 + Stops)."""
     symbols_to_remove = []
 
     for symbol, position in list(trades.items()):
@@ -349,30 +345,20 @@ def _track_short_positions(
             continue
 
         data = stocks_data[symbol]
-
-        # التقييم
         event = long_exit.process_position(symbol, position, data)
 
         if event is None:
             continue
 
-        # تطبيق الحدث
         if event.is_full_exit:
             symbols_to_remove.append(symbol)
-
-            # إرسال رسالة
             _send_short_exit_message(symbol, position, event)
-
-            # تحديث الإحصائيات
             bump_stat(state, "wins" if event.is_win else "losses")
         else:
-            # بيع جزئي
             updated = long_exit.apply_exit_event(position, event)
             trades[symbol] = updated
-
             _send_short_exit_message(symbol, position, event)
 
-    # احذف الصفقات المغلقة
     for symbol in symbols_to_remove:
         if symbol in trades:
             del trades[symbol]
@@ -386,9 +372,7 @@ def _scan_for_short_entries(
     regime: MarketRegime,
     state: StateManager,
 ) -> None:
-    """
-    يبحث عن صفقات سوينج جديدة.
-    """
+    """يبحث عن صفقات سوينج جديدة."""
     max_trades = get_max_trades(regime, MEASUREMENT_MODE)
     current = len(trades)
 
@@ -396,13 +380,11 @@ def _scan_for_short_entries(
         logger.debug(f"وصلنا الحد الأقصى ({max_trades})")
         return
 
-    # فحص المخاطرة الكلية
     can_risk, risk_pct = check_total_risk(trades, capital=SHORT_TERM_CAPITAL)
     if not can_risk:
         logger.warning(f"⚠️ المخاطرة الكلية {risk_pct}% مرتفعة — لا صفقات جديدة")
         return
 
-    # ترتيب الأسهم
     candidates = []
     for symbol, data in stocks_data.items():
         if symbol in trades:
@@ -414,10 +396,8 @@ def _scan_for_short_entries(
         if result.passed:
             candidates.append(result)
 
-    # رتب بالـ score
     candidates.sort(key=lambda r: r.score, reverse=True)
 
-    # خد الأفضل
     for result in candidates:
         if len(trades) >= max_trades:
             break
@@ -435,7 +415,6 @@ def _scan_for_short_entries(
             logger.debug(f"⏭️ {result.symbol}: {plan.reason}")
             continue
 
-        # فحص القطاع
         sector = data.get("sector", "OTHER")
         sector_count = sum(
             1 for s in trades
@@ -444,7 +423,6 @@ def _scan_for_short_entries(
         if sector_count >= 2:
             continue
 
-        # أضف الصفقة
         _open_short_position(result, plan, state)
         trades[result.symbol] = {
             "entry_price": plan.entry_price,
@@ -571,11 +549,9 @@ def _open_long_position(candidate, allocation: dict, state: StateManager) -> Non
     if shares < 1:
         return
 
-    # الستوب من ATR
     stop_distance = max(atr * 2.5, entry * 0.10)
     stop_loss = round(entry - stop_distance, 2)
 
-    # سجل الصفقة
     positions = state.get("long_positions", {})
     position = long_portfolio.build_position_record(
         candidate=candidate,
@@ -583,7 +559,6 @@ def _open_long_position(candidate, allocation: dict, state: StateManager) -> Non
         shares=shares,
         allocation_egp=capital_alloc,
     )
-    # أضف الأهداف
     position = long_exit.attach_targets_to_position(
         position, entry, stop_loss, atr
     )
@@ -592,7 +567,6 @@ def _open_long_position(candidate, allocation: dict, state: StateManager) -> Non
 
     bump_stat(state, "signals")
 
-    # رسالة تليجرام
     try:
         msg = (
             tpl.measurement_banner(MEASUREMENT_MODE) +
@@ -674,24 +648,4 @@ def _send_long_report(
         logger.error(f"فشل إرسال تقرير الاستثمار: {e}")
 
 
-# ===========================================================
-# الدالة الرئيسية
-# ===========================================================
-def main() -> None:
-    """نقطة الدخول الرئيسية."""
-    print_summary()
-
-    mode = sys.argv[1] if len(sys.argv) > 1 else "both"
-
-    try:
-        if mode in ("short", "both"):
-            run_short_bot()
-        if mode in ("long", "both"):
-            run_long_bot()
-    except Exception as e:
-        logger.exception(f"💥 خطأ غير متوقع: {e}")
-        tg.send_error(f"خطأ غير متوقع: {e}")
-
-
-if __name__ == "__main__":
-    main()
+# =
