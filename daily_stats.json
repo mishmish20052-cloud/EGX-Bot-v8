@@ -1,7 +1,7 @@
 {
   "_meta": {
     "morning_report": "2026-10-17",
-    "eod_report": "2026-10-21"
+    "eod_report": "2026-10-27"
   },
   "2026-10-13": {
     "wins": 0,
@@ -14,6 +14,11 @@
     "signals": 1
   },
   "2026-10-18": {
+    "wins": 0,
+    "losses": 1,
+    "signals": 1
+  },
+  "2026-10-27": {
     "wins": 0,
     "losses": 1,
     "signals": 1
