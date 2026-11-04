@@ -5,6 +5,7 @@
     "type": "أسهم",
     "units": 185,
     "avg_cost": 52.74,
+    "total_cost": 9756.86,
     "current_nav": 46.66
   },
   {
@@ -13,6 +14,7 @@
     "type": "دخل ثابت",
     "units": 15873,
     "avg_cost": 24.82,
+    "total_cost": 393994.05,
     "current_nav": 24.83
   },
   {
@@ -21,6 +23,7 @@
     "type": "دخل ثابت",
     "units": 2183,
     "avg_cost": 181.38,
+    "total_cost": 395962.65,
     "current_nav": 181.48
   },
   {
@@ -29,6 +32,7 @@
     "type": "عقاري",
     "units": 53,
     "avg_cost": 2.13,
+    "total_cost": 112.71,
     "current_nav": 1.72
   },
   {
@@ -37,6 +41,7 @@
     "type": "أسهم",
     "units": 76211,
     "avg_cost": 1.94,
+    "total_cost": 147618.42,
     "current_nav": 1.96
   }
 ]
