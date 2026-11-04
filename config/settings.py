@@ -29,8 +29,8 @@ TOTAL_CAPITAL = float(os.environ.get("TOTAL_CAPITAL", "69000"))
 
 # نسبة رأس المال المخصصة لكل استراتيجية
 CAPITAL_ALLOCATION = {
-    "long_term": 0.80,   # 80% للاستثمار متوسط المدى
-    "short_term": 0.20,  # 20% للسوينج
+    "long_term": 0.95,   # 80% للاستثمار متوسط المدى
+    "short_term": 0.05,  # 20% للسوينج
 }
 
 LONG_TERM_CAPITAL = TOTAL_CAPITAL * CAPITAL_ALLOCATION["long_term"]
