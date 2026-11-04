@@ -5,8 +5,7 @@
     "type": "أسهم",
     "units": 185,
     "avg_cost": 52.74,
-    "current_nav": 46.66,
-    "last_update": "2026-11-04"
+    "current_nav": 46.66
   },
   {
     "name": "صندوق مباشر كاش",
@@ -14,8 +13,7 @@
     "type": "دخل ثابت",
     "units": 15873,
     "avg_cost": 24.82,
-    "current_nav": 24.83,
-    "last_update": "2026-11-04"
+    "current_nav": 24.83
   },
   {
     "name": "صندوق فنار النقدي",
@@ -23,8 +21,7 @@
     "type": "دخل ثابت",
     "units": 2183,
     "avg_cost": 181.38,
-    "current_nav": 181.48,
-    "last_update": "2026-11-04"
+    "current_nav": 181.48
   },
   {
     "name": "صندوق ثروة العقاري",
@@ -32,8 +29,7 @@
     "type": "عقاري",
     "units": 53,
     "avg_cost": 2.13,
-    "current_nav": 1.72,
-    "last_update": "2026-11-04"
+    "current_nav": 1.72
   },
   {
     "name": "صندوق ثروة وفرة (متوافق مع الشريعة)",
@@ -41,7 +37,6 @@
     "type": "أسهم",
     "units": 76211,
     "avg_cost": 1.94,
-    "current_nav": 1.96,
-    "last_update": "2026-11-04"
+    "current_nav": 1.96
   }
 ]
