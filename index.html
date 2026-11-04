@@ -3,58 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة متابعة الصناديق</title>
+    <title>لوحة متابعة وتوصيات الصناديق</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: auto; }
+        .container { max-width: 1100px; margin: auto; }
         h1 { text-align: center; color: #333; }
         .cards { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; margin-bottom: 30px; }
         .card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); flex: 1; min-width: 250px; text-align: center; }
         .card h3 { margin: 0 0 10px 0; color: #555; }
         .card .value { font-size: 24px; font-weight: bold; color: #2c3e50; }
-        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        th, td { padding: 15px; text-align: right; border-bottom: 1px solid #eee; }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 30px; font-size: 14px; }
+        th, td { padding: 12px; text-align: right; border-bottom: 1px solid #eee; }
         th { background-color: #2c3e50; color: white; font-weight: normal; }
         tr:hover { background-color: #f9f9f9; }
         .profit { color: #27ae60; font-weight: bold; }
         .loss { color: #e74c3c; font-weight: bold; }
-        .btn { display: block; width: 200px; margin: 20px auto; padding: 10px; text-align: center; background: #3498db; color: white; text-decoration: none; border-radius: 5px; }
+        .badge { padding: 5px 10px; border-radius: 5px; font-weight: bold; font-size: 12px; display: inline-block; }
+        .badge-buy { background-color: #d4edda; color: #155724; }
+        .badge-hold { background-color: #e2e3e5; color: #383d41; }
+        .badge-wait { background-color: #f8d7da; color: #721c24; }
+        .chart-container { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 30px; height: 400px; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>📊 لوحة متابعة الصناديق الاستثمارية</h1>
+        <h1>📊 لوحة التوصيات الاستثمارية</h1>
         
-        <div class="cards" id="summaryCards">
-            <!-- سيتم ملؤها بواسطة JavaScript -->
-        </div>
+        <div class="cards" id="summaryCards"></div>
 
         <table id="fundsTable">
             <thead>
                 <tr>
                     <th>اسم الصندوق</th>
-                    <th>النوع</th>
-                    <th>سعر الشراء</th>
-                    <th>السعر الحالي (NAV)</th>
                     <th>عدد الوثائق</th>
-                    <th>الربح/الخسارة العائم</th>
+                    <th>متوسط التكلفة</th>
+                    <th>السعر الحالي</th>
+                    <th>الربح/الخسارة</th>
                     <th>النسبة</th>
+                    <th>التوصية الذكية</th>
                 </tr>
             </thead>
-            <tbody id="fundsBody">
-                <!-- سيتم ملؤها بواسطة JavaScript -->
-            </tbody>
+            <tbody id="fundsBody"></tbody>
         </table>
+
+        <div class="chart-container">
+            <canvas id="portfolioChart"></canvas>
+        </div>
     </div>
 
     <script>
-        // دالة لجلب البيانات من ملف JSON
+        let myChart = null;
+
         async function loadData() {
             try {
-                // لاحظ: سنستخدم مسار نسبي، ويجب أن يكون الملفان في نفس المجلد
                 const response = await fetch('funds.json');
                 const funds = await response.json();
-                
                 renderDashboard(funds);
             } catch (error) {
                 console.error('خطأ في تحميل البيانات:', error);
@@ -71,24 +75,42 @@
             tbody.innerHTML = '';
 
             funds.forEach(fund => {
+                // الحسابات الدقيقة بناءً على إجمالي التكلفة
                 const currentValue = fund.units * fund.current_nav;
-                const costValue = fund.units * fund.avg_cost;
+                const costValue = fund.total_cost; 
                 const profitLoss = currentValue - costValue;
                 const percentage = (profitLoss / costValue) * 100;
+                
+                // حساب نسبة الانخفاض الحالية لاتخاذ القرار
+                const currentDropPct = ((fund.avg_cost - fund.current_nav) / fund.avg_cost) * 100;
 
                 totalInvested += costValue;
                 totalCurrentValue += currentValue;
                 totalProfitLoss += profitLoss;
 
+                // --- محرك التوصيات ---
+                let recommendation = "";
+                if (fund.type === 'دخل ثابت') {
+                    recommendation = `<span class="badge badge-hold">⚪ احتفاظ</span>`;
+                } else {
+                    if (currentDropPct >= fund.target_buy_drop_pct && fund.target_buy_drop_pct > 0) {
+                        recommendation = `<span class="badge badge-buy">🟢 شراء (فرصة)</span>`;
+                    } else if (fund.target_buy_drop_pct >= 20) {
+                         recommendation = `<span class="badge badge-wait">🔴 لا تضف (ينتظر 20%)</span>`;
+                    } else {
+                        recommendation = `<span class="badge badge-hold">⚪ احتفاظ</span>`;
+                    }
+                }
+
                 const row = `
                     <tr>
                         <td>${fund.name}</td>
-                        <td>${fund.type}</td>
+                        <td>${fund.units.toLocaleString()}</td>
                         <td>${fund.avg_cost.toFixed(2)}</td>
                         <td>${fund.current_nav.toFixed(2)}</td>
-                        <td>${fund.units.toFixed(2)}</td>
                         <td class="${profitLoss >= 0 ? 'profit' : 'loss'}">${profitLoss.toFixed(2)}</td>
                         <td class="${percentage >= 0 ? 'profit' : 'loss'}">${percentage.toFixed(2)}%</td>
+                        <td>${recommendation}</td>
                     </tr>
                 `;
                 tbody.innerHTML += row;
@@ -99,20 +121,54 @@
             document.getElementById('summaryCards').innerHTML = `
                 <div class="card">
                     <h3>إجمالي المستثمر</h3>
-                    <div class="value">${totalInvested.toFixed(2)} ج.م</div>
+                    <div class="value">${totalInvested.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</div>
                 </div>
                 <div class="card">
                     <h3>القيمة الحالية</h3>
-                    <div class="value">${totalCurrentValue.toFixed(2)} ج.م</div>
+                    <div class="value">${totalCurrentValue.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ج.م</div>
                 </div>
                 <div class="card">
-                    <h3>الربح/الخسارة الإجمالية</h3>
-                    <div class="value ${totalProfitLoss >= 0 ? 'profit' : 'loss'}">${totalProfitLoss.toFixed(2)} ج.م (${overallPercentage.toFixed(2)}%)</div>
+                    <h3>الربح/الخسارة</h3>
+                    <div class="value ${totalProfitLoss >= 0 ? 'profit' : 'loss'}">${totalProfitLoss.toLocaleString('en-US', {minimumFractionDigits: 2})} ج.م (${overallPercentage.toFixed(2)}%)</div>
                 </div>
             `;
+
+            renderChart(funds);
         }
 
-        // تشغيل الدالة عند تحميل الصفحة
+        function renderChart(funds) {
+            const ctx = document.getElementById('portfolioChart').getContext('2d');
+            
+            if (myChart) { myChart.destroy(); }
+
+            // رسم بياني يقارن القيمة الحالية بالتكلفة لكل صندوق
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: funds.map(f => f.name.split(' ')[1] || f.name), // اختصار الاسم
+                    datasets: [
+                        {
+                            label: 'التكلفة (رأس المال)',
+                            data: funds.map(f => f.total_cost),
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                        },
+                        {
+                            label: 'القيمة الحالية (NAV)',
+                            data: funds.map(f => f.units * f.current_nav),
+                            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: { display: true, text: 'مقارنة رأس المال مع القيمة الحالية لكل صندوق' }
+                    }
+                }
+            });
+        }
+
         loadData();
     </script>
 </body>
