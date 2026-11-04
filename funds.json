@@ -6,7 +6,8 @@
     "units": 185,
     "avg_cost": 52.74,
     "total_cost": 9756.86,
-    "current_nav": 46.66
+    "current_nav": 46.66,
+    "target_buy_drop_pct": 10
   },
   {
     "name": "صندوق مباشر كاش",
@@ -15,7 +16,8 @@
     "units": 15873,
     "avg_cost": 24.82,
     "total_cost": 393994.05,
-    "current_nav": 24.83
+    "current_nav": 24.83,
+    "target_buy_drop_pct": 0
   },
   {
     "name": "صندوق فنار النقدي",
@@ -24,7 +26,8 @@
     "units": 2183,
     "avg_cost": 181.38,
     "total_cost": 395962.65,
-    "current_nav": 181.48
+    "current_nav": 181.48,
+    "target_buy_drop_pct": 0
   },
   {
     "name": "صندوق ثروة العقاري",
@@ -33,7 +36,8 @@
     "units": 53,
     "avg_cost": 2.13,
     "total_cost": 112.71,
-    "current_nav": 1.72
+    "current_nav": 1.72,
+    "target_buy_drop_pct": 20
   },
   {
     "name": "صندوق ثروة وفرة (متوافق مع الشريعة)",
@@ -42,6 +46,7 @@
     "units": 76211,
     "avg_cost": 1.94,
     "total_cost": 147618.42,
-    "current_nav": 1.96
+    "current_nav": 1.96,
+    "target_buy_drop_pct": 10
   }
 ]
