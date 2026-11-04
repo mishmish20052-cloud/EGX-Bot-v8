@@ -25,7 +25,7 @@ CAIRO_TZ = ZoneInfo("Africa/Cairo")
 # ===========================================================
 # رأس المال وتوزيعه
 # ===========================================================
-TOTAL_CAPITAL = float(os.environ.get("TOTAL_CAPITAL", "10000"))
+TOTAL_CAPITAL = float(os.environ.get("TOTAL_CAPITAL", "69000"))
 
 # نسبة رأس المال المخصصة لكل استراتيجية
 CAPITAL_ALLOCATION = {
