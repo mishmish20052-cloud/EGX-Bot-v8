@@ -3,5 +3,8 @@
     "wins": 0,
     "losses": 0,
     "signals": 5
+  },
+  "_meta": {
+    "eod_report": "2026-11-05"
   }
 }
