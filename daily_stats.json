@@ -5,9 +5,14 @@
     "signals": 5
   },
   "_meta": {
-    "eod_report": "2026-11-18"
+    "eod_report": "2026-11-19"
   },
   "2026-11-16": {
+    "wins": 0,
+    "losses": 1,
+    "signals": 1
+  },
+  "2026-11-19": {
     "wins": 0,
     "losses": 1,
     "signals": 1
